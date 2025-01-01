@@ -35,8 +35,6 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Config;
-import frc.robot.RobotConstants;
-import frc.robot.subsystems.swervedrive.Vision.Cameras;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -55,6 +53,9 @@ import swervelib.parser.SwerveDriveConfiguration;
 import swervelib.parser.SwerveParser;
 import swervelib.telemetry.SwerveDriveTelemetry;
 import swervelib.telemetry.SwerveDriveTelemetry.TelemetryVerbosity;
+import frc.robot.RobotConstants;
+import frc.robot.RobotConstants.DrivebaseConstants;
+import frc.robot.subsystems.Vision.Cameras;
 
 public class SwerveSubsystem extends SubsystemBase {
 
@@ -62,14 +63,10 @@ public class SwerveSubsystem extends SubsystemBase {
    * Swerve drive object.
    */
   private final SwerveDrive swerveDrive;
-  /**
-   * AprilTag field layout.
-   */
+
   private final AprilTagFieldLayout aprilTagFieldLayout = AprilTagFieldLayout.loadField(AprilTagFields.k2024Crescendo);
-  /**
-   * Enable vision odometry updates while driving.
-   */
-  private final boolean visionDriveTest = false;
+
+  private final boolean visionDriveTest = true;
   /**
    * PhotonVision class to keep an accurate odometry.
    */
@@ -81,50 +78,29 @@ public class SwerveSubsystem extends SubsystemBase {
    * @param directory Directory of swerve drive config files.
    */
   public SwerveSubsystem(File directory) {
-    // Angle conversion factor is 360 / (GEAR RATIO * ENCODER RESOLUTION)
-    // In this case the gear ratio is 12.8 motor revolutions per wheel rotation.
-    // The encoder resolution per motor revolution is 1 per motor revolution.
-    double angleConversionFactor = SwerveMath.calculateDegreesPerSteeringRotation(12.8);
-    // Motor conversion factor is (PI * WHEEL DIAMETER IN METERS) / (GEAR RATIO *
-    // ENCODER RESOLUTION).
-    // In this case the wheel diameter is 4 inches, which must be converted to
-    // meters to get meters/second.
-    // The gear ratio is 6.75 motor revolutions per wheel rotation.
-    // The encoder resolution per motor revolution is 1 per motor revolution.
-    double driveConversionFactor = SwerveMath.calculateMetersPerRotation(Units.inchesToMeters(4), 6.75);
-    System.out.println("\"conversionFactors\": {");
-    System.out.println("\t\"angle\": {\"factor\": " + angleConversionFactor + " },");
-    System.out.println("\t\"drive\": {\"factor\": " + driveConversionFactor + " }");
-    System.out.println("}");
 
-    // Configure the Telemetry before creating the SwerveDrive to avoid unnecessary
-    // objects being created.
-    SwerveDriveTelemetry.verbosity = TelemetryVerbosity.HIGH;
+    SwerveDriveTelemetry.verbosity = TelemetryVerbosity.LOW; // For debugging
+
     try {
-      swerveDrive = new SwerveParser(directory).createSwerveDrive(RobotConstants.MAX_SPEED,
+      // Create the swerve drive
+      swerveDrive = new SwerveParser(directory).createSwerveDrive(DrivebaseConstants.MAX_SPEED,
           new Pose2d(new Translation2d(Meter.of(1),
               Meter.of(4)),
               Rotation2d.fromDegrees(0)));
-      // Alternative method if you don't want to supply the conversion factor via JSON
-      // files.
-      // swerveDrive = new SwerveParser(directory).createSwerveDrive(maximumSpeed,
-      // angleConversionFactor, driveConversionFactor);
+
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
     swerveDrive.setHeadingCorrection(false); // Heading correction should only be used while controlling the robot via
                                              // angle.
-    swerveDrive.setCosineCompensator(false);// !SwerveDriveTelemetry.isSimulation); // Disables cosine compensation for
-                                            // simulations since it causes discrepancies not seen in real life.
+    swerveDrive.setCosineCompensator(!SwerveDriveTelemetry.isSimulation); // Disables cosine compensation for
+    // simulations since it causes discrepancies not seen in real life.
+
     swerveDrive.setAngularVelocityCompensation(true,
         true,
         0.1); // Correct for skew that gets worse as angular velocity increases. Start with a
               // coefficient of 0.1.
-    swerveDrive.setModuleEncoderAutoSynchronize(false,
-        1); // Enable if you want to resynchronize your absolute encoders and motor encoders
-            // periodically when they are not moving.
-    swerveDrive.pushOffsetsToEncoders(); // Set the absolute encoder to be used over the internal encoder and push the
-                                         // offsets onto it. Throws warning if not possible
+
     if (visionDriveTest) {
       setupPhotonVision();
       // Stop the odometry thread if we are using vision that way we can synchronize
@@ -143,7 +119,7 @@ public class SwerveSubsystem extends SubsystemBase {
   public SwerveSubsystem(SwerveDriveConfiguration driveCfg, SwerveControllerConfiguration controllerCfg) {
     swerveDrive = new SwerveDrive(driveCfg,
         controllerCfg,
-        RobotConstants.MAX_SPEED,
+        DrivebaseConstants.MAX_SPEED,
         new Pose2d(new Translation2d(Meter.of(2), Meter.of(0)),
             Rotation2d.fromDegrees(0)));
   }
@@ -168,9 +144,6 @@ public class SwerveSubsystem extends SubsystemBase {
   public void simulationPeriodic() {
   }
 
-  /**
-   * Setup AutoBuilder for PathPlanner.
-   */
   public void setupPathPlanner() {
     // Load the RobotConfig from the GUI settings. You should probably
     // store this in your Constants file
@@ -247,36 +220,22 @@ public class SwerveSubsystem extends SubsystemBase {
     return getPose().getTranslation().getDistance(speakerAprilTagPose.toPose2d().getTranslation());
   }
 
-  /**
-   * Get the yaw to aim at the speaker.
-   *
-   * @return {@link Rotation2d} of which you need to achieve.
-   */
-  public Rotation2d getSpeakerYaw() {
-    int allianceAprilTag = DriverStation.getAlliance().get() == Alliance.Blue ? 7 : 4;
-    // Taken from PhotonUtils.getYawToPose()
-    Pose3d speakerAprilTagPose = aprilTagFieldLayout.getTagPose(allianceAprilTag).get();
-    Translation2d relativeTrl = speakerAprilTagPose.toPose2d().relativeTo(getPose()).getTranslation();
-    return new Rotation2d(relativeTrl.getX(), relativeTrl.getY()).plus(swerveDrive.getOdometryHeading());
-  }
+  // This is a usefull refrence for Harrison later, do not remove pls
 
-  /**
-   * Aim the robot at the speaker.
-   *
-   * @param tolerance Tolerance in degrees.
-   * @return Command to turn the robot to the speaker.
-   */
-  public Command aimAtSpeaker(double tolerance) {
-    SwerveController controller = swerveDrive.getSwerveController();
-    return run(
-        () -> {
-          ChassisSpeeds speeds = ChassisSpeeds.fromFieldRelativeSpeeds(0, 0,
-              controller.headingCalculate(getHeading().getRadians(),
-                  getSpeakerYaw().getRadians()),
-              getHeading());
-          drive(speeds);
-        }).until(() -> Math.abs(getSpeakerYaw().minus(getHeading()).getDegrees()) < tolerance);
-  }
+  // public Command aimAtSpeaker(double tolerance) {
+  // SwerveController controller = swerveDrive.getSwerveController();
+
+  // return run(
+  // () -> {
+  // ChassisSpeeds speeds = ChassisSpeeds.toRobotRelativeSpeeds(0, 0,
+  // controller.headingCalculate(getHeading().getRadians(),
+  // getSpeakerYaw().getRadians()),
+  // getHeading());
+  // drive(speeds);
+
+  // }).until(() -> Math.abs(getSpeakerYaw().minus(getHeading()).getDegrees()) <
+  // tolerance);
+  // }
 
   /**
    * Aim the robot at the target returned by PhotonVision.
@@ -332,6 +291,25 @@ public class SwerveSubsystem extends SubsystemBase {
   }
 
   /**
+   * Drive with 254's Setpoint generator; port written by PathPlanner.
+   *
+   * @param fieldRelativeSpeeds Field-Relative {@link ChassisSpeeds}
+   * @return Command to drive the robot using the setpoint generator.
+   */
+  public Command driveWithSetpointGeneratorFieldRelative(Supplier<ChassisSpeeds> fieldRelativeSpeeds) {
+    try {
+      return driveWithSetpointGenerator(() -> {
+        return ChassisSpeeds.fromFieldRelativeSpeeds(fieldRelativeSpeeds.get(), getHeading());
+
+      });
+    } catch (Exception e) {
+      DriverStation.reportError(e.toString(), true);
+    }
+    return Commands.none();
+
+  }
+
+  /**
    * Drive with {@link SwerveSetpointGenerator} from 254, implemented by
    * PathPlanner.
    *
@@ -364,25 +342,6 @@ public class SwerveSubsystem extends SubsystemBase {
           previousTime.set(newTime);
 
         });
-  }
-
-  /**
-   * Drive with 254's Setpoint generator; port written by PathPlanner.
-   *
-   * @param fieldRelativeSpeeds Field-Relative {@link ChassisSpeeds}
-   * @return Command to drive the robot using the setpoint generator.
-   */
-  public Command driveWithSetpointGeneratorFieldRelative(Supplier<ChassisSpeeds> fieldRelativeSpeeds) {
-    try {
-      return driveWithSetpointGenerator(() -> {
-        return ChassisSpeeds.fromFieldRelativeSpeeds(fieldRelativeSpeeds.get(), getHeading());
-
-      });
-    } catch (Exception e) {
-      DriverStation.reportError(e.toString(), true);
-    }
-    return Commands.none();
-
   }
 
   /**
@@ -436,17 +395,19 @@ public class SwerveSubsystem extends SubsystemBase {
         .until(() -> swerveDrive.getPose().getTranslation().getDistance(new Translation2d(0, 0)) > distanceInMeters);
   }
 
-  /**
-   * Replaces the swerve module feedforward with a new SimpleMotorFeedforward
-   * object.
-   *
-   * @param kS the static gain of the feedforward
-   * @param kV the velocity gain of the feedforward
-   * @param kA the acceleration gain of the feedforward
-   */
-  public void replaceSwerveModuleFeedforward(double kS, double kV, double kA) {
-    swerveDrive.replaceSwerveModuleFeedforward(new SimpleMotorFeedforward(kS, kV, kA));
-  }
+  // Do not think we need but idk
+  // /**
+  // * Replaces the swerve module feedforward with a new SimpleMotorFeedforward
+  // * object.
+  // *
+  // * @param kS the static gain of the feedforward
+  // * @param kV the velocity gain of the feedforward
+  // * @param kA the acceleration gain of the feedforward
+  // */
+  // public void replaceSwerveModuleFeedforward(double kS, double kV, double kA) {
+  // swerveDrive.replaceSwerveModuleFeedforward(new SimpleMotorFeedforward(kS, kV,
+  // kA));
+  // }
 
   /**
    * Command to drive the robot using translative values and heading as angular
@@ -532,8 +493,7 @@ public class SwerveSubsystem extends SubsystemBase {
         fieldRelative,
         false); // Open loop is disabled since it shouldn't be used most of the time.
   }
-
-  /**
+/**
    * Drive the robot given a chassis field oriented velocity.
    *
    * @param velocity Velocity according to the field.
@@ -552,7 +512,6 @@ public class SwerveSubsystem extends SubsystemBase {
       swerveDrive.driveFieldOriented(velocity.get());
     });
   }
-
   /**
    * Drive according to the chassis robot oriented velocity.
    *
@@ -686,7 +645,7 @@ public class SwerveSubsystem extends SubsystemBase {
         headingX,
         headingY,
         getHeading().getRadians(),
-        RobotConstants.MAX_SPEED);
+        DrivebaseConstants.MAX_SPEED);
   }
 
   /**
@@ -706,7 +665,7 @@ public class SwerveSubsystem extends SubsystemBase {
         scaledInputs.getY(),
         angle.getRadians(),
         getHeading().getRadians(),
-        RobotConstants.MAX_SPEED);
+        DrivebaseConstants.MAX_SPEED);
   }
 
   /**
