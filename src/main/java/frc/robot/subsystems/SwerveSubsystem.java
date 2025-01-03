@@ -29,6 +29,7 @@ import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -66,7 +67,7 @@ public class SwerveSubsystem extends SubsystemBase {
 
   private final AprilTagFieldLayout aprilTagFieldLayout = AprilTagFieldLayout.loadField(AprilTagFields.k2024Crescendo);
 
-  private final boolean visionDriveTest = true;
+  private final boolean visionDriveTest = false;
   /**
    * PhotonVision class to keep an accurate odometry.
    */
@@ -79,7 +80,7 @@ public class SwerveSubsystem extends SubsystemBase {
    */
   public SwerveSubsystem(File directory) {
 
-    SwerveDriveTelemetry.verbosity = TelemetryVerbosity.LOW; // For debugging
+    SwerveDriveTelemetry.verbosity = TelemetryVerbosity.HIGH; // For debugging
 
     try {
       // Create the swerve drive
@@ -93,7 +94,7 @@ public class SwerveSubsystem extends SubsystemBase {
     }
     swerveDrive.setHeadingCorrection(false); // Heading correction should only be used while controlling the robot via
                                              // angle.
-    swerveDrive.setCosineCompensator(!SwerveDriveTelemetry.isSimulation); // Disables cosine compensation for
+    swerveDrive.setCosineCompensator(RobotBase.isReal()); // Disables cosine compensation for
     // simulations since it causes discrepancies not seen in real life.
 
     swerveDrive.setAngularVelocityCompensation(true,
